@@ -557,6 +557,7 @@ cubism_contextPrototype.horizon = function() {
       metric = cubism_identity,
       extent = null,
       title = cubism_identity,
+      unit = undefined,
       format = d3.format(".2s"),
       colors = ["#08519c","#3182bd","#6baed6","#bdd7e7","#bae4b3","#74c476","#31a354","#006d2c"];
 
@@ -675,7 +676,13 @@ cubism_contextPrototype.horizon = function() {
       function focus(i) {
         if (i == null) i = width - 1;
         var value = metric_.valueAt(i);
-        span.datum(value).text(isNaN(value) ? null : format);
+        if (value === undefined) return;
+        if (value) {
+          span.datum(value).text(isNaN(value) ? null : format);
+        } else {
+          span.html('0')
+        }
+        if (unit !== undefined) span.append("span").attr("class", "unit").html(unit)
       }
 
       // Update the chart when the context changes.
@@ -746,6 +753,12 @@ cubism_contextPrototype.horizon = function() {
   horizon.title = function(_) {
     if (!arguments.length) return title;
     title = _;
+    return horizon;
+  };
+
+  horizon.unit = function(_) {
+    if (!arguments.length) return unit;
+    unit = _;
     return horizon;
   };
 
