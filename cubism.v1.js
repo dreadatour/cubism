@@ -191,27 +191,37 @@ cubism_contextPrototype.graphite = function(host) {
       context = this;
 
   source.metric = function(expression) {
-    var sum = "sum";
+    var sum = "sum",
+        retention = 1e4;  // graphite storage retention, 10sec by default
 
     var metric = context.metric(function(start, stop, step, callback) {
       var target = expression;
 
       // Apply the summarize, if necessary.
-      if (step !== 1e4) target = "summarize(" + target + ",'"
-          + (!(step % 36e5) ? step / 36e5 + "hour" : !(step % 6e4) ? step / 6e4 + "min" : step / 1e3 + "sec")
-          + "','" + sum + "')";
+      if (step !== retention) {
+        target = "summarize(" + target + ",'" + Math.floor(step < 1e3 ? 1 : step / 1e3) + "sec','" + sum + "')";
+      }
+      // Avoid of holes in chart
+      if (step < retention) target = "keepLastValue(" + target + ")";
+      // Avoid of empty values in graphite data if 'nonNegativeDerivative' function is used
+      var data_tail_count = target.indexOf('nonNegativeDerivative(') > -1 ? retention / step : 0;
 
       d3.text(host + "/render?format=raw"
           + "&target=" + encodeURIComponent("alias(" + target + ",'')")
-          + "&from=" + cubism_graphiteFormatDate(start - 2 * step) // off-by-two?
+          + "&from=" + cubism_graphiteFormatDate(start - (data_tail_count + 2) * step) // off-by-two?
           + "&until=" + cubism_graphiteFormatDate(stop - 1000), function(text) {
         if (!text) return callback(new Error("unable to load data"));
-        callback(null, cubism_graphiteParse(text));
+        callback(null, cubism_graphiteParse(text, data_tail_count));
       });
     }, expression += "");
 
     metric.summarize = function(_) {
       sum = _;
+      return metric;
+    };
+
+    metric.retention = function (_) {
+      retention = _;
       return metric;
     };
 
@@ -240,7 +250,7 @@ function cubism_graphiteFormatDate(time) {
 }
 
 // Helper method for parsing graphite's raw format.
-function cubism_graphiteParse(text) {
+function cubism_graphiteParse(text, tail_slice) {
   var i = text.indexOf("|"),
       meta = text.substring(0, i),
       c = meta.lastIndexOf(","),
@@ -251,7 +261,7 @@ function cubism_graphiteParse(text) {
   return text
       .substring(i + 1)
       .split(",")
-      .slice(1) // the first value is always None?
+      .slice(tail_slice + 1) // the first value is always None?
       .map(function(d) { return +d; });
 }
 cubism_contextPrototype.gangliaWeb = function(config) {
